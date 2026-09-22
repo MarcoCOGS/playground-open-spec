@@ -23,6 +23,35 @@ describe('AppController (e2e)', () => {
       .expect('Hello World!');
   });
 
+  it('/greetings (POST)', () => {
+    return request(app.getHttpServer())
+      .post('/greetings')
+      .send({ name: 'Marco' })
+      .expect('Content-Type', /json/)
+      .expect(201)
+      .expect({ message: 'Hola Marco' });
+  });
+
+  it.each([
+    ['a name shorter than 5 characters', { name: 'Mara' }],
+    ['a name longer than 20 characters', {
+      name: 'abcdefghijklmnopqrstu',
+    }],
+    ['a name with digits', { name: 'Marco1' }],
+    ['a name with symbols', { name: 'Marco#' }],
+    ['a missing name', {}],
+    ['a non-textual name', { name: 12345 }],
+  ])('rejects %s', async (_description, body) => {
+    const response = await request(app.getHttpServer())
+      .post('/greetings')
+      .send(body)
+      .expect('Content-Type', /json/)
+      .expect(400);
+
+    expect(response.body.statusCode).toBe(400);
+    expect(response.body.message.join(' ')).toContain('name');
+  });
+
   afterEach(async () => {
     await app.close();
   });

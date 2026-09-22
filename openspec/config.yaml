@@ -1,0 +1,40 @@
+schema: spec-driven
+
+context: |
+  Idioma de trabajo: Español.
+  Todos los artefactos deben escribirse en español.
+
+  Stack principal:
+  - NestJS
+  - TypeScript
+  - pnpm
+  - Jest
+  - Joi
+
+  Principios de diseño:
+  - Separar claramente comportamiento funcional de decisiones técnicas.
+  - Aplicar Clean Architecture cuando corresponda.
+  - Aplicar DDD cuando exista lógica de dominio relevante.
+  - Evitar acoplar dominio a NestJS o librerías de infraestructura.
+
+rules:
+  specs:
+    - Describir únicamente comportamiento observable y reglas funcionales.
+    - No incluir detalles de implementación salvo que sean una restricción explícita del requerimiento.
+    - Los escenarios deben ser verificables.
+
+  design:
+    - Explicar cómo se implementará cada comportamiento definido en las specs.
+    - No introducir nuevos requisitos funcionales.
+    - Identificar capas, dependencias y decisiones arquitectónicas relevantes.
+
+  tasks:
+    - Cada tarea debe derivarse de specs o design.
+    - No introducir decisiones funcionales nuevas.
+    - Mantener tareas concretas y ejecutables.
+
+operations:
+  apply:
+    guidance:
+      - Implementar respetando specs y design.
+      - Si aparece una contradicción, actualizar primero los artefactos antes de continuar.
