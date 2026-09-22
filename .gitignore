@@ -60,15 +60,22 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 
 # ---------------------------------------------------------------------------
-# Custom Open-SDD skill - generated copies
-# Source of truth: /skills/open-sdd/SKILL.md
+# Generated agent integrations
+#
+# Custom skills source of truth: /skills/
+# OpenSpec source of truth: /openspec/ + OpenSpec CLI
+#
+# The copies under each agent directory are generated and must not be tracked.
 # ---------------------------------------------------------------------------
 
-/.agents/skills/openspec-*/
+/.agents/skills/*/
 /.agents/skills/.openspec-target
-/.claude/skills/openspec-*/
+
+/.claude/skills/*/
 /.claude/commands/opsx/
-/.kiro/skills/openspec-*/
+
+/.kiro/skills/*/
 /.kiro/prompts/
-/.opencode/skills/openspec-*/
+
+/.opencode/skills/*/
 /.opencode/commands/

@@ -19,7 +19,9 @@
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --watch",
     "test:cov": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --coverage",
     "test:debug": "NODE_OPTIONS='--inspect-brk --experimental-vm-modules' pnpm exec jest --runInBand",
-    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --config ./test/jest-e2e.config.mjs --runInBand"
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --config ./test/jest-e2e.config.mjs --runInBand",
+    "check:drift": "node scripts/check-drift.mjs",
+    "skills:sync": "node scripts/sync-skills.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

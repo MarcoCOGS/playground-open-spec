@@ -18,6 +18,16 @@ context: |
   - Evitar acoplar dominio a NestJS o librerías de infraestructura.
 
 rules:
+  proposal:
+    - Si existe un ID externo de requerimiento, conservarlo en el nombre del change. Ejemplo req-1126-add-validation.
+    - Antes de completar Impact en un cambio brownfield, usar Serena para inspeccionar la implementación existente y sus referencias.
+    - En "Impact" incluir una subsección "Affected code".
+    - En "Affected code" registrar únicamente código confirmado, usando path relativo + symbol.
+    - No registrar números de línea.
+    - No inventar símbolos ni archivos que Serena o la inspección del código no hayan confirmado.
+    - En "Impact" incluir una subsección "Affected specs", indicando las capabilities existentes afectadas y, si corresponde, las nuevas capabilities que introducirá el cambio.
+    - Para capabilities existentes, usar su path exacto dentro de `openspec/specs/`.
+
   specs:
     - Describir únicamente comportamiento observable y reglas funcionales.
     - No incluir detalles de implementación salvo que sean una restricción explícita del requerimiento.
@@ -38,3 +48,7 @@ operations:
     guidance:
       - Implementar respetando specs y design.
       - Si aparece una contradicción, actualizar primero los artefactos antes de continuar.
+      - Cuando sea necesario localizar implementación existente, referencias o impacto de un cambio, preferir las herramientas semánticas de Serena antes de realizar búsquedas amplias o leer muchos archivos completos.
+      - No usar Serena innecesariamente cuando los archivos afectados ya sean evidentes.
+      - Si durante la implementación aparecen archivos o símbolos relevantes no contemplados en "Affected code", actualizar el Impact para reflejar el impacto real.
+      - Antes de finalizar, comparar el código realmente modificado con el Impact documentado y reconciliar diferencias.
