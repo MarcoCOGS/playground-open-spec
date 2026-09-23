@@ -10,8 +10,6 @@ import path from 'node:path';
 const ROOT = process.cwd();
 const ARCHIVE_DIR = path.join(ROOT, 'openspec', 'changes', 'archive');
 
-const DEFAULT_BASE_BRANCH = process.env.DRIFT_BASE_BRANCH ?? 'main';
-
 function git(args, { allowFailure = false } = {}) {
   try {
     return execFileSync('git', args, {
@@ -56,71 +54,8 @@ function normalizePath(value) {
     .trim();
 }
 
-function getArgument(name) {
-  const index = process.argv.indexOf(name);
-
-  if (index === -1) {
-    return undefined;
-  }
-
-  return process.argv[index + 1];
-}
-
-function resolveBaseCommit() {
-  const explicitBase = getArgument('--base');
-
-  if (explicitBase) {
-    if (!gitRefExists(explicitBase)) {
-      throw new Error(`El ref Git "${explicitBase}" no existe.`);
-    }
-
-    return explicitBase;
-  }
-
-  const currentBranch = git(['branch', '--show-current'], {
-    allowFailure: true,
-  });
-
-  if (
-    currentBranch &&
-    currentBranch !== DEFAULT_BASE_BRANCH &&
-    gitRefExists(DEFAULT_BASE_BRANCH)
-  ) {
-    return git([
-      'merge-base',
-      DEFAULT_BASE_BRANCH,
-      'HEAD',
-    ]);
-  }
-
-  if (gitRefExists('HEAD~1')) {
-    return 'HEAD~1';
-  }
-
-  return undefined;
-}
-
-function getChangedFiles(baseCommit) {
-  const changed = new Set();
-
-  for (const file of gitLines([
-    'diff',
-    '--name-only',
-    baseCommit,
-  ])) {
-    changed.add(normalizePath(file));
-  }
-
-  // git diff no incluye archivos nuevos aún no trackeados.
-  for (const file of gitLines([
-    'ls-files',
-    '--others',
-    '--exclude-standard',
-  ])) {
-    changed.add(normalizePath(file));
-  }
-
-  return changed;
+function toRepoRelativePath(absolutePath) {
+  return normalizePath(path.relative(ROOT, absolutePath));
 }
 
 function findProposalFiles(directory) {
@@ -161,19 +96,18 @@ function parseAffectedCode(proposalPath) {
   const affectedCode = [];
 
   let insideSection = false;
-  let currentEntry = undefined;
+  let currentEntry;
 
   for (const line of lines) {
-    if (/^###\s+Affected code\s*$/i.test(line.trim())) {
+    const trimmed = line.trim();
+
+    if (/^###\s+Affected code\s*$/i.test(trimmed)) {
       insideSection = true;
       currentEntry = undefined;
       continue;
     }
 
-    if (
-      insideSection &&
-      /^#{1,3}\s+/.test(line.trim())
-    ) {
+    if (insideSection && /^#{1,3}\s+/.test(trimmed)) {
       break;
     }
 
@@ -181,9 +115,7 @@ function parseAffectedCode(proposalPath) {
       continue;
     }
 
-    const bulletMatch = line.match(
-      /^(\s*)-\s+(.+)$/,
-    );
+    const bulletMatch = line.match(/^(\s*)-\s+(.+)$/);
 
     if (!bulletMatch) {
       continue;
@@ -192,9 +124,9 @@ function parseAffectedCode(proposalPath) {
     const indentation = bulletMatch[1].length;
     const body = bulletMatch[2];
 
-    const values = [
-      ...body.matchAll(/`([^`]+)`/g),
-    ].map((match) => match[1].trim());
+    const values = [...body.matchAll(/`([^`]+)`/g)].map((match) =>
+      match[1].trim(),
+    );
 
     if (values.length === 0) {
       continue;
@@ -219,10 +151,7 @@ function parseAffectedCode(proposalPath) {
 }
 
 function getRequirementInfo(proposalPath) {
-  const changeDirectory = path.basename(
-    path.dirname(proposalPath),
-  );
-
+  const changeDirectory = path.basename(path.dirname(proposalPath));
   const reqMatch = changeDirectory.match(/req-\d+/i);
 
   return {
@@ -233,54 +162,180 @@ function getRequirementInfo(proposalPath) {
   };
 }
 
+/**
+ * Obtiene el commit de la rama actual donde apareció por primera vez
+ * el proposal dentro de openspec/changes/archive/.
+ *
+ * Ese commit se considera el checkpoint inicial del REQ.
+ */
+function getArchiveCheckpoint(proposalPath) {
+  const relativePath = toRepoRelativePath(proposalPath);
+
+  const commits = gitLines([
+    'rev-list',
+    '--reverse',
+    'HEAD',
+    '--',
+    relativePath,
+  ]);
+
+  for (const commit of commits) {
+    const existsAtCommit = git(
+      ['cat-file', '-e', `${commit}:${relativePath}`],
+      { allowFailure: true },
+    );
+
+    // cat-file -e no imprime nada cuando funciona,
+    // por eso verificamos directamente el exit code de otra forma.
+    try {
+      execFileSync(
+        'git',
+        ['cat-file', '-e', `${commit}:${relativePath}`],
+        {
+          cwd: ROOT,
+          stdio: 'ignore',
+        },
+      );
+
+      return commit;
+    } catch {
+      // Continuar buscando.
+    }
+  }
+
+  return undefined;
+}
+
+function addNameStatusFiles(target, lines) {
+  for (const line of lines) {
+    const parts = line.split('\t');
+
+    if (parts.length < 2) {
+      continue;
+    }
+
+    const status = parts[0];
+
+    // Rename / Copy:
+    // R100 old-path new-path
+    if (
+      (status.startsWith('R') || status.startsWith('C')) &&
+      parts.length >= 3
+    ) {
+      target.add(normalizePath(parts[1]));
+      target.add(normalizePath(parts[2]));
+      continue;
+    }
+
+    target.add(normalizePath(parts[1]));
+  }
+}
+
+/**
+ * Obtiene todo lo modificado DESPUÉS del checkpoint hasta el estado actual
+ * de la rama.
+ *
+ * Incluye:
+ * - commits posteriores al checkpoint;
+ * - cambios staged;
+ * - cambios unstaged;
+ * - archivos untracked.
+ */
+function getChangedFilesSince(checkpoint) {
+  const changed = new Set();
+
+  // Historial confirmado después del checkpoint.
+  addNameStatusFiles(
+    changed,
+    gitLines([
+      'diff',
+      '--name-status',
+      '--find-renames',
+      `${checkpoint}..HEAD`,
+    ]),
+  );
+
+  // Cambios locales todavía no committeados.
+  addNameStatusFiles(
+    changed,
+    gitLines([
+      'diff',
+      '--name-status',
+      '--find-renames',
+      'HEAD',
+    ]),
+  );
+
+  // Archivos nuevos todavía no trackeados.
+  for (const file of gitLines([
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+  ])) {
+    changed.add(normalizePath(file));
+  }
+
+  return changed;
+}
+
+function shortCommit(commit) {
+  return git(['rev-parse', '--short', commit]);
+}
+
 function main() {
   if (!gitRefExists('HEAD')) {
-    console.error(
-      'No se encontró un repositorio Git con commits.',
-    );
+    console.error('✗ No se encontró un repositorio Git con commits.');
     process.exitCode = 1;
     return;
   }
 
-  const baseCommit = resolveBaseCommit();
+  const branch = git(['branch', '--show-current'], {
+    allowFailure: true,
+  });
 
-  if (!baseCommit) {
-    console.log(
-      'No existe suficiente historial Git para comprobar drift.',
-    );
-    return;
-  }
-
-  const changedFiles = getChangedFiles(baseCommit);
+  const head = git(['rev-parse', 'HEAD']);
+  const proposalFiles = findProposalFiles(ARCHIVE_DIR);
 
   console.log('');
   console.log('OpenSpec drift check');
   console.log('--------------------');
-  console.log(`Base Git: ${baseCommit}`);
-  console.log(`HEAD:     ${git(['rev-parse', '--short', 'HEAD'])}`);
-  console.log(
-    `Archivos modificados: ${changedFiles.size}`,
-  );
+  console.log(`Rama: ${branch || '(detached HEAD)'}`);
+  console.log(`HEAD: ${shortCommit(head)}`);
   console.log('');
 
-  if (changedFiles.size === 0) {
-    console.log('✓ No hay cambios para analizar.');
-    return;
-  }
-
-  const proposalFiles = findProposalFiles(ARCHIVE_DIR);
-
   if (proposalFiles.length === 0) {
-    console.log(
-      '✓ No existen changes archivados con los que comparar.',
-    );
+    console.log('✓ No existen requirements archivados para analizar.');
     return;
   }
 
   const findings = [];
+  const withoutAffectedCode = [];
+  const withoutCheckpoint = [];
+  let checkedRequirements = 0;
 
   for (const proposalPath of proposalFiles) {
+    const requirement = getRequirementInfo(proposalPath);
     const affectedCode = parseAffectedCode(proposalPath);
+
+    if (affectedCode.length === 0) {
+      withoutAffectedCode.push(requirement);
+      continue;
+    }
+
+    const checkpoint = getArchiveCheckpoint(proposalPath);
+
+    if (!checkpoint) {
+      withoutCheckpoint.push(requirement);
+      continue;
+    }
+
+    checkedRequirements += 1;
+
+    const changedFiles = getChangedFilesSince(checkpoint);
+
+    if (changedFiles.size === 0) {
+      continue;
+    }
 
     const matches = affectedCode.filter((entry) =>
       changedFiles.has(entry.path),
@@ -291,15 +346,47 @@ function main() {
     }
 
     findings.push({
-      ...getRequirementInfo(proposalPath),
+      ...requirement,
+      checkpoint,
       matches,
     });
   }
 
+  console.log(`Requirements analizados: ${checkedRequirements}`);
+
+  if (withoutAffectedCode.length > 0) {
+    console.log(
+      `Sin "Affected code": ${withoutAffectedCode.length}`,
+    );
+  }
+
+  if (withoutCheckpoint.length > 0) {
+    console.log(
+      `Sin checkpoint Git: ${withoutCheckpoint.length}`,
+    );
+  }
+
+  console.log('');
+
   if (findings.length === 0) {
     console.log(
-      '✓ Ningún archivo modificado coincide con Affected code de requirements archivados.',
+      '✓ No se detectó posible drift en los requirements archivados.',
     );
+
+    if (withoutAffectedCode.length > 0) {
+      console.log('');
+      console.log(
+        '⚠ Existen requirements archivados sin "Affected code"; no pueden analizarse automáticamente.',
+      );
+    }
+
+    if (withoutCheckpoint.length > 0) {
+      console.log('');
+      console.log(
+        '⚠ Existen requirements cuyo archive todavía no está registrado en el historial Git de esta rama.',
+      );
+    }
+
     return;
   }
 
@@ -309,6 +396,9 @@ function main() {
   for (const finding of findings) {
     console.log(
       `${finding.requirementId} (${finding.changeDirectory})`,
+    );
+    console.log(
+      `  Checkpoint: ${shortCommit(finding.checkpoint)}`,
     );
 
     for (const match of finding.matches) {
@@ -323,7 +413,7 @@ function main() {
   }
 
   console.log(
-    'Estos requirements requieren análisis semántico antes de concluir que existe drift real.',
+    'Los resultados son candidatos. Usa el skill check-drift + Serena para determinar si existe impacto semántico real.',
   );
 }
 
