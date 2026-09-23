@@ -33,6 +33,58 @@ describe('AppController (e2e)', () => {
   });
 
   it.each([
+    [
+      'a name and last name',
+      { name: 'Marco', lastName: 'Gallegos' },
+      { message: 'Hola Marco Gallegos' },
+    ],
+    [
+      'Unicode components with single spaces',
+      { name: 'José María', lastName: 'De la Cruz' },
+      { message: 'Hola José María De la Cruz' },
+    ],
+  ])('/greetings/full-name (POST) greets %s', (_description, body, expected) => {
+    return request(app.getHttpServer())
+      .post('/greetings/full-name')
+      .send(body)
+      .expect('Content-Type', /json/)
+      .expect(201)
+      .expect(expected);
+  });
+
+  it.each([
+    ['a name shorter than 5 characters', { name: 'Mara', lastName: 'Gallegos' }, 'name'],
+    [
+      'a name longer than 20 characters',
+      { name: 'abcdefghijklmnopqrstu', lastName: 'Gallegos' },
+      'name',
+    ],
+    ['a name with digits', { name: 'Marco1', lastName: 'Gallegos' }, 'name'],
+    ['a name with symbols', { name: 'Marco#', lastName: 'Gallegos' }, 'name'],
+    ['a missing name', { lastName: 'Gallegos' }, 'name'],
+    ['a non-textual name', { name: 12345, lastName: 'Gallegos' }, 'name'],
+    ['a last name shorter than 5 characters', { name: 'Marco', lastName: 'Paz' }, 'lastName'],
+    [
+      'a last name longer than 20 characters',
+      { name: 'Marco', lastName: 'abcdefghijklmnopqrstu' },
+      'lastName',
+    ],
+    ['a last name with digits', { name: 'Marco', lastName: 'Gallegos1' }, 'lastName'],
+    ['a last name with symbols', { name: 'Marco', lastName: 'Gallegos-' }, 'lastName'],
+    ['a missing last name', { name: 'Marco' }, 'lastName'],
+    ['a non-textual last name', { name: 'Marco', lastName: 12345 }, 'lastName'],
+  ])('rejects a full name with %s', async (_description, body, field) => {
+    const response = await request(app.getHttpServer())
+      .post('/greetings/full-name')
+      .send(body)
+      .expect('Content-Type', /json/)
+      .expect(400);
+
+    expect(response.body.statusCode).toBe(400);
+    expect(response.body.message.join(' ')).toContain(field);
+  });
+
+  it.each([
     ['a name shorter than 5 characters', { name: 'Mara' }],
     ['a name longer than 20 characters', {
       name: 'abcdefghijklmnopqrstu',

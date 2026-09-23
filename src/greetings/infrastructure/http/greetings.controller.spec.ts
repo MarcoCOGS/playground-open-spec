@@ -1,14 +1,17 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
+import { GenerateFullNameGreetingUseCase } from '../../application/generate-full-name-greeting.use-case.js';
 import { GenerateGreetingUseCase } from '../../application/generate-greeting.use-case.js';
 import { GreetingsController } from './greetings.controller.js';
 
 describe('GreetingsController', () => {
   let controller: GreetingsController;
   const execute = jest.fn();
+  const executeFullName = jest.fn();
 
   beforeEach(async () => {
     execute.mockReset();
+    executeFullName.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [GreetingsController],
@@ -16,6 +19,10 @@ describe('GreetingsController', () => {
         {
           provide: GenerateGreetingUseCase,
           useValue: { execute },
+        },
+        {
+          provide: GenerateFullNameGreetingUseCase,
+          useValue: { execute: executeFullName },
         },
       ],
     }).compile();
@@ -30,5 +37,19 @@ describe('GreetingsController', () => {
       message: 'Hola Marco',
     });
     expect(execute).toHaveBeenCalledWith({ name: 'Marco' });
+  });
+
+  it('delegates a full-name request to its use case', () => {
+    executeFullName.mockReturnValue({ message: 'Hola Marco Gallegos' });
+
+    expect(
+      controller.createFullName({ name: 'Marco', lastName: 'Gallegos' }),
+    ).toEqual({
+      message: 'Hola Marco Gallegos',
+    });
+    expect(executeFullName).toHaveBeenCalledWith({
+      name: 'Marco',
+      lastName: 'Gallegos',
+    });
   });
 });
